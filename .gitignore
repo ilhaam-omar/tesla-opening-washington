@@ -1,0 +1,6 @@
+data/*
+!data/README.md
+!data/08_access_dates_by_manufacturer.xlsx
+__pycache__/
+*.pyc
+.DS_Store
