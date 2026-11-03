@@ -6,7 +6,7 @@ Builds the Washington State datasets (Section 3.2), the tract measures (Section 
 models for H1a-H3b with the robustness checks (Section 3.4). Run:  python analysis.py
 Input files are read from data/ (see data/README.md); results are written to output/.
 """
-import os, json, re, zipfile, time, warnings
+import os, glob, json, re, zipfile, time, warnings
 import numpy as np, pandas as pd, pyfixest as pf
 warnings.filterwarnings("ignore")
 D = os.environ.get("DATA_DIR", "data"); O = os.environ.get("OUT_DIR", "output"); os.makedirs(O, exist_ok=True)
@@ -25,7 +25,7 @@ def rep(label, m, term):
 
 # ---------------------------------------------------------------- 3.2 data and sample
 P("# 3.2 Data and sample")
-reg = pd.read_csv(f"{D}/01_WA_DOL_new_EV_registrations.csv", low_memory=False)
+reg = pd.read_csv(sorted(glob.glob(f"{D}/01_WA_DOL_new_EV_registrations*.csv*"))[0], low_memory=False)  # full .csv or the trimmed .csv.gz
 reg = reg[(reg.new_or_used_vehicle == "New") & (reg.transaction_type == "Original Title") & (reg.state_of_residence == "WA")].copy()
 reg["sold"] = pd.to_datetime(reg.date_of_vehicle_sale, errors="coerce")
 reg = reg[(reg.sold >= "2022-01-01") & (reg.sold <= "2025-06-30")]
@@ -94,10 +94,16 @@ for c in ("HomeCharge", "Income"):
 v = pd.read_csv(f"{D}/07_MIT_county_presidential_returns_2000-2024.csv", low_memory=False)
 v = v[(v.state_po == "WA") & (v.year == 2020) & (v["mode"] == "TOTAL")]
 share = (v[v.party == "DEMOCRAT"].groupby("county_fips").candidatevotes.sum() / v.groupby("county_fips").totalvotes.first())
+# county home-charging access (Ge et al., 2024), used only as a check on the tract measure; the baseline scenario
+# at an EV share of stock close to Washington's in 2023 (NREL_SHARE)
+NREL_SHARE = float(os.environ.get("NREL_SHARE", "0.03"))
+nr = pd.read_csv(f"{D}/04_NREL_home_charging_access_WA_counties.csv", dtype={"county_fips": str})
+nr = nr[(nr.scenario == "baseline") & (nr.ev_share_of_stock.round(2) == round(NREL_SHARE, 2))]
+T["HomeChargeCounty"] = T.tract.str[:5].map(dict(zip(nr.county_fips.str.zfill(5), nr.home_charging_access)))
 T["VoteShare"] = T.county.map({str(int(k)).zfill(5): x for k, x in share.items()})
 # estimation sample: tracts with a BEV and with usable fast charging within 25 miles
 T = T[T.tract.isin(bev.tract.unique()) & (T.other + T.v34 > 0)].copy()
-for c in ("CommAlt", "HomeCharge", "Income", "Density", "VoteShare"):
+for c in ("CommAlt", "HomeCharge", "HomeChargeCounty", "Income", "Density", "VoteShare"):
     T[c + "_z"] = (T[c] - T[c].mean()) / T[c].std()
 P(f"  tracts in estimation {len(T):,}; CommAlt mean {T.CommAlt.mean():.3f} sd {T.CommAlt.std():.3f}; HomeCharge mean {T.HomeCharge.mean():.3f} sd {T.HomeCharge.std():.3f}")
 months = pd.date_range("2022-01-01", "2025-06-01", freq="MS")
@@ -128,60 +134,76 @@ PH = rival_dataset(reg[reg.type == "PHEV"]); PH = PH[PH.unit.isin(PH.groupby("un
 P(f"  rival rows {len(R):,} (zero share {(R.y==0).mean():.3f}); owner rows {len(Wn):,}; N range {Wn.N.min()}-{Wn.N.max()}")
 
 # ---------------------------------------------------------------- 3.4 estimation
+# Market share. Rival side: the area-month effects hold each tract's whole market fixed in every month, so each
+# coefficient is the change in a rival's share of that market. Owner side: Tesla's registrations are modeled with
+# the tract's total registrations as an offset, which makes the outcome Tesla's market share.
+def est_share(formula, data, cluster="county"):
+    d = data[data.Total > 0].copy(); d["lnTotal"] = np.log(d.Total)
+    return pf.fepois(formula, data=d, offset="lnTotal", vcov={"CRV1": cluster}, **FE)
 CTRL = "Access:Income_z + Access:Density_z + Access:VoteShare_z"
-P("# Baseline (reported, not hypothesised)")
-rep("Baseline: Access, Eq.(1)", est("y ~ Access + SalePrice + Models | bt + tm", R), "Access")
-P("# Eq.(1): H1a and H2a")
-rep("H1a Eq.(1): Access x CommAlt", est(f"y ~ Access + Access:CommAlt_z + Access:TeslaStalls + {CTRL} + SalePrice + Models | bt + tm", R), "Access:CommAlt_z")
-rep("H1a stricter: Access x CommAlt", est(f"y ~ Access:CommAlt_z + Access:TeslaStalls + {CTRL} | bt + cm + bm", R), "Access:CommAlt_z")
-rep("H2a Eq.(1): Access x HomeCharge", est(f"y ~ Access + Access:HomeCharge_z + {CTRL} + SalePrice + Models | bt + tm", R), "Access:HomeCharge_z")
-mB = est(f"y ~ Access:HomeCharge_z + {CTRL} | bt + cm + bm", R); rep("H2a stricter: Access x HomeCharge", mB, "Access:HomeCharge_z")
-rep("H2a stricter, brand clusters", est(f"y ~ Access:HomeCharge_z + {CTRL} | bt + cm + bm", R, "unit"), "Access:HomeCharge_z")
-P("# Eq.(2): H1b, H2b, then Total for H3a, H3b")
 X2 = "N:CommAlt_z + N:TeslaStalls + N:HomeCharge_z + N:Income_z + N:Density_z"
-mo = est(f"Tesla ~ {X2} | tract + cm", Wn); rep("H1b Eq.(2): N x CommAlt (predicted +)", mo, "N:CommAlt_z"); rep("H2b Eq.(2): N x HomeCharge (predicted -)", mo, "N:HomeCharge_z")
-mt = est(f"Total ~ {X2} | tract + cm", Wn); rep("H3a Total: N x CommAlt (predicted -)", mt, "N:CommAlt_z"); rep("H3b Total: N x HomeCharge (predicted 0)", mt, "N:HomeCharge_z")
-mn = est(f"NonTesla ~ {X2} | tract + cm", Wn); rep("decomposition: NonTesla x CommAlt", mn, "N:CommAlt_z"); rep("decomposition: NonTesla x HomeCharge", mn, "N:HomeCharge_z")
-b, s, p = RES["H3b Total: N x HomeCharge (predicted 0)"]; P(f"  H3b with nine rivals: {pc(9*b):+.1f}%, 90% CI [{pc(9*(b-1.645*s)):+.1f}%, {pc(9*(b+1.645*s)):+.1f}%]")
-b, s, p = RES["H3a Total: N x CommAlt (predicted -)"]; P(f"  H3a with nine rivals, one SD fewer alternatives: {pc(-9*b):+.1f}%")
-P("# Checks promised in 3.4: event study, announcement dates, plug-in hybrids; clustering")
-rep("H2b Tesla, tract clusters", est(f"Tesla ~ {X2} | tract + cm", Wn, "tract"), "N:HomeCharge_z")
-rep("H3a Total, tract clusters", est(f"Total ~ {X2} | tract + cm", Wn, "tract"), "N:CommAlt_z")
-ma = est("Tesla ~ Nann:CommAlt_z + N:CommAlt_z + Nann:HomeCharge_z + N:HomeCharge_z + Nann:Income_z + N:Income_z + Nann:Density_z + N:Density_z + N:TeslaStalls | tract + cm", Wn)
-rep("H2b announcement vs access: access term", ma, "N:HomeCharge_z"); rep("H2b announcement vs access: announced term", ma, "Nann:HomeCharge_z")
-ma = est("Total ~ Nann:CommAlt_z + N:CommAlt_z + Nann:HomeCharge_z + N:HomeCharge_z + Nann:Income_z + N:Income_z + Nann:Density_z + N:Density_z + N:TeslaStalls | tract + cm", Wn)
-rep("H3a announcement vs access: access term", ma, "N:CommAlt_z"); rep("H3a announcement vs access: announced term", ma, "Nann:CommAlt_z")
+
+P("# H1: rivals' market share (main effect and where it is larger)")
+rep("H1 rivals: Access", est("y ~ Access + SalePrice + Models | bt + tm", R), "Access")
+rep("H1a rivals: Access x CommAlt (pred -)", est(f"y ~ Access + Access:CommAlt_z + Access:TeslaStalls + {CTRL} + SalePrice + Models | bt + tm", R), "Access:CommAlt_z")
+rep("H1a stricter", est(f"y ~ Access:CommAlt_z + Access:TeslaStalls + {CTRL} | bt + cm + bm", R), "Access:CommAlt_z")
+rep("H1b rivals: Access x HomeCharge (pred +)", est(f"y ~ Access + Access:HomeCharge_z + {CTRL} + SalePrice + Models | bt + tm", R), "Access:HomeCharge_z")
+rep("H1b stricter", est(f"y ~ Access:HomeCharge_z + {CTRL} | bt + cm + bm", R), "Access:HomeCharge_z")
+# The owner-side and total-sales main effects are not hypothesized: every tract has the same number of brands with
+# access in a given month, so a statewide change cannot be separated from other statewide trends. Equation (2)
+# therefore tests where these effects are larger.
+P("# H2: owner's market share (where it falls more)")
+mo = est_share(f"Tesla ~ {X2} | tract + cm", Wn)
+rep("H2a owner share: N x CommAlt (pred +)", mo, "N:CommAlt_z")
+rep("H2b owner share: N x HomeCharge (pred -)", mo, "N:HomeCharge_z")
+b, s_, p = RES["H2b owner share: N x HomeCharge (pred -)"]; P(f"  H2b with nine rivals: {pc(9*b):+.1f}% in Tesla's share per SD of home charging")
+P("# H3: total sales (where they rise more)")
+mt = est(f"Total ~ {X2} | tract + cm", Wn)
+rep("H3a total: N x CommAlt (pred -)", mt, "N:CommAlt_z"); rep("H3b total: N x HomeCharge (pred -)", mt, "N:HomeCharge_z")
+b, s_, p = RES["H3a total: N x CommAlt (pred -)"]; P(f"  H3a with nine rivals, one SD fewer alternatives: {pc(-9*b):+.1f}%")
+b, s_, p = RES["H3b total: N x HomeCharge (pred -)"]; P(f"  H3b with nine rivals: {pc(9*b):+.1f}%, 90% CI [{pc(9*(b-1.645*s_)):+.1f}%, {pc(9*(b+1.645*s_)):+.1f}%]")
+mn = est(f"NonTesla ~ {X2} | tract + cm", Wn)
+rep("Non-Tesla registrations: N x CommAlt", mn, "N:CommAlt_z"); rep("Non-Tesla registrations: N x HomeCharge", mn, "N:HomeCharge_z")
+
+P("# Robustness checks")
+rep("H1b stricter, brand clusters", est(f"y ~ Access:HomeCharge_z + {CTRL} | bt + cm + bm", R, "unit"), "Access:HomeCharge_z")
+rep(f"H1b stricter, county home-charging measure ({NREL_SHARE:.0%} stock)", est(f"y ~ Access:HomeChargeCounty_z + {CTRL} | bt + cm + bm", R), "Access:HomeChargeCounty_z")
+rep("H2b owner share, tract clusters", est_share(f"Tesla ~ {X2} | tract + cm", Wn, "tract"), "N:HomeCharge_z")
+rep("H2b owner count instead of share", est(f"Tesla ~ {X2} | tract + cm", Wn), "N:HomeCharge_z")
+rep("H3a total, tract clusters", est(f"Total ~ {X2} | tract + cm", Wn, "tract"), "N:CommAlt_z")
+AN = "Nann:CommAlt_z + N:CommAlt_z + Nann:HomeCharge_z + N:HomeCharge_z + Nann:Income_z + N:Income_z + Nann:Density_z + N:Density_z + N:TeslaStalls"
+ma = est_share(f"Tesla ~ {AN} | tract + cm", Wn); rep("H2b announcement: access term", ma, "N:HomeCharge_z"); rep("H2b announcement: announced term", ma, "Nann:HomeCharge_z")
+ma = est(f"Total ~ {AN} | tract + cm", Wn); rep("H3a announcement: access term", ma, "N:CommAlt_z"); rep("H3a announcement: announced term", ma, "Nann:CommAlt_z")
 ma = est(f"y ~ Announced:HomeCharge_z + Access:HomeCharge_z + Announced:Income_z + Access:Income_z + Announced:Density_z + Access:Density_z + Announced:VoteShare_z + Access:VoteShare_z | bt + cm + bm", R)
-rep("H2a announcement vs access: access term", ma, "Access:HomeCharge_z"); rep("H2a announcement vs access: announced term", ma, "Announced:HomeCharge_z")
-rep("H2a PHEV placebo (Eq.1 with county-month FE)", est(f"y ~ Access + Access:HomeCharge_z + {CTRL} | bt + cm", PH), "Access:HomeCharge_z")
+rep("H1b announcement: access term", ma, "Access:HomeCharge_z"); rep("H1b announcement: announced term", ma, "Announced:HomeCharge_z")
+rep("H1b placebo, plug-in hybrids", est(f"y ~ Access + Access:HomeCharge_z + {CTRL} | bt + cm", PH), "Access:HomeCharge_z")
 ph = PH.groupby(["tract", "m"]).y.sum().rename("PHEV"); W2 = Wn.merge(ph, left_on=["tract", "m"], right_index=True, how="left").fillna({"PHEV": 0})
 mp = est("PHEV ~ N:CommAlt_z + N:HomeCharge_z + N:Income_z + N:Density_z | tract + cm", W2)
-rep("H2b PHEV placebo outcome: N x HomeCharge", mp, "N:HomeCharge_z"); rep("H3a PHEV placebo outcome: N x CommAlt", mp, "N:CommAlt_z")
-# event studies (quarterly, reference 2023Q4 = last quarter before any access) for the owner-side gradients
-Wn["q"] = Wn.m.dt.to_period("Q").astype(str)
-for ycol, var, lab in [("Tesla", "HomeCharge_z", "H2b"), ("Total", "HomeCharge_z", "H3b"), ("Total", "CommAlt_z", "H3a")]:
-    other = "CommAlt_z" if var == "HomeCharge_z" else "HomeCharge_z"
-    me = est(f"{ycol} ~ i(q, {var}, ref='2023Q4') + i(q, {other}, ref='2023Q4') + i(q, Income_z, ref='2023Q4') + i(q, Density_z, ref='2023Q4') | tract + cm", Wn)
-    tt = me.tidy(); tt = tt[tt.index.str.contains(var)].copy(); tt["q"] = tt.index.str.extract(r"q::(\d{4}Q\d)")[0].values
-    pre = tt[tt.q < "2024Q1"].Estimate; post = tt[tt.q >= "2024Q4"].Estimate
-    P(f"  {lab} event study ({ycol} x {var}) vs 2023Q4: pre-2024 mean {pre.mean():+.3f}, from 2024Q4 mean {post.mean():+.3f}, shift {post.mean()-pre.mean():+.3f}")
-    tt.to_csv(f"{O}/event_{lab}.csv")
-# rival-side event study for the home-charging interaction, relative to the pre-access average
+rep("H2b placebo, plug-in hybrids: N x HomeCharge", mp, "N:HomeCharge_z"); rep("H3a placebo, plug-in hybrids: N x CommAlt", mp, "N:CommAlt_z")
 E = R.copy(); E["post"] = ((E.rel >= 0) & (E.role == "gains access")).astype(int); E["pre_slope"] = np.where((E.role == "gains access") & (E.rel < 0), E.rel.clip(-24, 0), 0)
 me = est("y ~ post + post:HomeCharge_z + pre_slope:HomeCharge_z + post:Income_z + post:Density_z + post:VoteShare_z + SalePrice + Models | bt + tm", E)
-rep("H2a post vs pre-average (pre-trend slope allowed)", me, "post:HomeCharge_z"); rep("   pre-access slope x HomeCharge", me, "pre_slope:HomeCharge_z")
+rep("H1b after access, with pre-access trend", me, "post:HomeCharge_z"); rep("H1b pre-access trend", me, "pre_slope:HomeCharge_z")
+# quarterly event studies (reference 2023Q4, the last quarter before any access)
+Wn["q"] = Wn.m.dt.to_period("Q").astype(str)
+for ycol, var, lab, share in [("Tesla", "HomeCharge_z", "H2b", True), ("Total", "CommAlt_z", "H3a", False), ("Total", "HomeCharge_z", "H3b", False)]:
+    other = "CommAlt_z" if var == "HomeCharge_z" else "HomeCharge_z"
+    f = f"{ycol} ~ i(q, {var}, ref='2023Q4') + i(q, {other}, ref='2023Q4') + i(q, Income_z, ref='2023Q4') + i(q, Density_z, ref='2023Q4') | tract + cm"
+    me = est_share(f, Wn) if share else est(f, Wn)
+    tt = me.tidy(); tt = tt[tt.index.str.contains(var)].copy(); tt["q"] = tt.index.str.extract(r"q::(\d{4}Q\d)")[0].values
+    pre = tt[tt.q < "2024Q1"].Estimate; post = tt[tt.q >= "2024Q4"].Estimate
+    P(f"  {lab} event study ({ycol}{' share' if share else ''} x {var}): pre-2024 mean {pre.mean():+.3f}, from 2024Q4 mean {post.mean():+.3f}")
+    tt.to_csv(f"{O}/event_{lab}.csv")
 
 # ---------------------------------------------------------------- verdicts
 P("# Verdicts")
-def v(k): return RES[k]
-rows = []
-b, s, p = v("Baseline: Access, Eq.(1)"); rows.append(("Baseline", f"{pc(b):+.1f}% (p={p:.2f})", "reported"))
-bA, _, pA = v("H1a Eq.(1): Access x CommAlt"); bB, _, pB = v("H1a stricter: Access x CommAlt"); rows.append(("H1a", f"{pc(bA):+.1f}% (p={pA:.2f}); stricter {pc(bB):+.1f}% (p={pB:.2f})", "Yes" if bA < 0 and pA < .05 and bB < 0 and pB < .05 else "No"))
-b, _, p = v("H1b Eq.(2): N x CommAlt (predicted +)"); rows.append(("H1b", f"{pc(b):+.1f}%/brand (p={p:.2f})", "Yes" if b > 0 and p < .05 else "No"))
-bA, _, pA = v("H2a Eq.(1): Access x HomeCharge"); bB, _, pB = v("H2a stricter: Access x HomeCharge"); rows.append(("H2a", f"{pc(bA):+.1f}% (p={pA:.3f}); stricter {pc(bB):+.1f}% (p={pB:.3f})", "Yes" if bA > 0 and pA < .05 and bB > 0 and pB < .05 else ("Weak" if bA > 0 and pA < .05 and bB > 0 and pB < .10 else "No")))
-b, _, p = v("H2b Eq.(2): N x HomeCharge (predicted -)"); rows.append(("H2b", f"{pc(b):+.1f}%/brand (p={p:.3f})", "Yes" if b < 0 and p < .05 else "No"))
-b, _, p = v("H3a Total: N x CommAlt (predicted -)"); rows.append(("H3a", f"{pc(b):+.1f}%/brand (p={p:.3f}); see event study", "Yes (point estimate)" if b < 0 and p < .05 else "No"))
-b, s, p = v("H3b Total: N x HomeCharge (predicted 0)"); rows.append(("H3b", f"{pc(b):+.1f}%/brand (p={p:.2f}); 90% CI 9 brands [{pc(9*(b-1.645*s)):+.1f}%, {pc(9*(b+1.645*s)):+.1f}%]", "Yes (redistribution)" if not (b > 0 and p < .05) else "No"))
-V = pd.DataFrame(rows, columns=["H", "estimate", "verdict"]); P(V.to_string(index=False)); V.to_csv(f"{O}/verdicts.csv", index=False)
-pd.DataFrame([dict(test=k, b=b, se=s, p=p, pct=pc(b)) for k, (b, s, p) in RES.items()]).to_csv(f"{O}/results.csv", index=False)
+def V(k, sign):
+    b, s_, p = RES[k]; ok = (b * sign > 0) and p < .05; weak = (b * sign > 0) and p < .10
+    return f"{pc(b):+.1f}% (p={p:.3f})", "Yes" if ok else ("Weak" if weak else "No")
+rows = [("H1", *V("H1 rivals: Access", 1)),
+        ("H1a", *V("H1a rivals: Access x CommAlt (pred -)", -1)), ("H1a stricter", *V("H1a stricter", -1)),
+        ("H1b", *V("H1b rivals: Access x HomeCharge (pred +)", 1)), ("H1b stricter", *V("H1b stricter", 1)),
+        ("H2a", *V("H2a owner share: N x CommAlt (pred +)", 1)), ("H2b", *V("H2b owner share: N x HomeCharge (pred -)", -1)),
+        ("H3a", *V("H3a total: N x CommAlt (pred -)", -1)), ("H3b", *V("H3b total: N x HomeCharge (pred -)", -1))]
+Vt = pd.DataFrame(rows, columns=["H", "estimate", "supported"]); P(Vt.to_string(index=False)); Vt.to_csv(f"{O}/verdicts.csv", index=False)
+pd.DataFrame([dict(test=k, b=b, se=s_, p=p, pct=pc(b)) for k, (b, s_, p) in RES.items()]).to_csv(f"{O}/results.csv", index=False)
 open(f"{O}/log.txt", "w").write("\n".join(out)); P(f"DONE {(time.time()-t0)/60:.1f} min")
