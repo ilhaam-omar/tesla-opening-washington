@@ -8,3 +8,7 @@ H2a,-0.1% (p=0.835),No
 H2b,-1.3% (p=0.000),Yes
 H3a,-1.3% (p=0.007),Yes
 H3b,-0.3% (p=0.474),No
+"H1, clean comparison",-7.6% (p=0.024),No
+"H1b, clean comparison",+5.4% (p=0.000),Yes
+H2 (described only),-0.9% (p=0.021),Yes
+H3 (described only),-7.2% (p=0.000),No

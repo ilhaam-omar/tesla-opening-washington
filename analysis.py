@@ -1,9 +1,9 @@
 """
-Opening the Gates: Whose sales change, and where, when a firm shares its proprietary complement with rivals.
+Opening the Gates: Whose sales change, and in which neighborhoods, when a firm shares its proprietary complement with rivals.
 ESMA 722 Technology Strategy, Assignment III (Khalifa University, Fall 2026).
 
 Builds the Washington State datasets (Section 3.2), the tract measures (Section 3.3), and estimates the
-models for H1a-H3b with the robustness checks (Section 3.4). Run:  python analysis.py
+models for H1-H3b with the robustness checks (Section 3.4). Run:  python analysis.py
 Input files are read from data/ (see data/README.md); results are written to output/.
 """
 import os, glob, json, re, zipfile, time, warnings
@@ -149,9 +149,9 @@ rep("H1a rivals: Access x CommAlt (pred -)", est(f"y ~ Access + Access:CommAlt_z
 rep("H1a stricter", est(f"y ~ Access:CommAlt_z + Access:TeslaStalls + {CTRL} | bt + cm + bm", R), "Access:CommAlt_z")
 rep("H1b rivals: Access x HomeCharge (pred +)", est(f"y ~ Access + Access:HomeCharge_z + {CTRL} + SalePrice + Models | bt + tm", R), "Access:HomeCharge_z")
 rep("H1b stricter", est(f"y ~ Access:HomeCharge_z + {CTRL} | bt + cm + bm", R), "Access:HomeCharge_z")
-# The owner-side and total-sales main effects are not hypothesized: every tract has the same number of brands with
-# access in a given month, so a statewide change cannot be separated from other statewide trends. Equation (2)
-# therefore tests where these effects are larger.
+# The owner-side and total-sales main effects (H2, H3) cannot be tested: every tract has the same number of brands
+# with access in a given month, so a statewide change cannot be separated from other statewide trends. They are
+# described further below; Equation (2) tests where these effects are larger (H2a-H3b).
 P("# H2: owner's market share (where it falls more)")
 mo = est_share(f"Tesla ~ {X2} | tract + cm", Wn)
 rep("H2a owner share: N x CommAlt (pred +)", mo, "N:CommAlt_z")
@@ -194,6 +194,44 @@ for ycol, var, lab, share in [("Tesla", "HomeCharge_z", "H2b", True), ("Total", 
     P(f"  {lab} event study ({ycol}{' share' if share else ''} x {var}): pre-2024 mean {pre.mean():+.3f}, from 2024Q4 mean {post.mean():+.3f}")
     tt.to_csv(f"{O}/event_{lab}.csv")
 
+# ---------------------------------------------------------------- H2 and H3 main effects (described, not identified)
+# Every tract faced the same number of rivals with access in the same month, so the owner's overall change and the
+# change in total sales cannot be separated from other statewide changes. We report the observed change and the
+# 2022-23 trend, and a version that removes a linear trend; neither is a causal estimate.
+P("# H2 and H3 main effects: observed change (descriptive)")
+Wn["period"] = np.select([Wn.m < "2023-01-01", Wn.m < "2024-03-01", Wn.m < "2025-01-01"], ["2022", "2023 to Feb 2024", "Mar to Dec 2024"], "Jan to Jun 2025")
+desc = Wn.groupby("period")[["Tesla", "Total"]].sum()
+desc["months"] = Wn.groupby("period").m.nunique(); desc["Tesla share"] = desc.Tesla / desc.Total; desc["Total per month"] = desc.Total / desc.months
+desc = desc.loc[["2022", "2023 to Feb 2024", "Mar to Dec 2024", "Jan to Jun 2025"]]
+P(desc.round(3).to_string()); desc.to_csv(f"{O}/main_effects_descriptive.csv")
+pre = Wn[Wn.m < "2024-03-01"]; post = Wn[Wn.m >= "2024-03-01"]
+sh_pre, sh_post = pre.Tesla.sum() / pre.Total.sum(), post.Tesla.sum() / post.Total.sum()
+P(f"  H2 observed: Tesla's share {sh_pre:.3f} before March 2024, {sh_post:.3f} after ({sh_post - sh_pre:+.3f})")
+P(f"  H3 observed: total registrations per month {pre.Total.sum()/pre.m.nunique():,.0f} before, {post.Total.sum()/post.m.nunique():,.0f} after")
+Wn["t"] = (Wn.m.dt.year - 2022) * 12 + Wn.m.dt.month - 1
+Wn["moy"] = Wn.m.dt.month.astype(str)
+rep("H2 described: N, Tesla share, linear trend removed", est_share("Tesla ~ N + t | tract + moy", Wn), "N")
+rep("H3 described: N, total registrations, linear trend removed", est("Total ~ N + t | tract + moy", Wn), "N")
+for k in ("H2 described: N, Tesla share, linear trend removed", "H3 described: N, total registrations, linear trend removed"):
+    b, s_, p = RES[k]; P(f"  {k}: {pc(9*b):+.1f}% with nine rivals")
+
+# ---------------------------------------------------------------- H1 and H1b with clean comparisons
+# In the main model, brands that gained access earlier also serve as comparisons for brands that gain access later.
+# Here each group of brands with the same access month is compared only with brands that had no access during the
+# study period, in a stacked sample with stack-specific fixed effects.
+P("# H1 and H1b, comparison with brands without access only (stacked)")
+keep = ["unit", "tract", "m", "y", "Access", "SalePrice", "Models", "HomeCharge_z", "Income_z", "Density_z", "VoteShare_z", "county", "access_m", "role"]
+ctrl_units = units.loc[units.role != "gains access", "unit"].tolist()
+stacks = []
+for i, (am, g) in enumerate(units[units.role == "gains access"].groupby("access_m")):
+    s = R.loc[R.unit.isin(g.unit.tolist() + ctrl_units), keep].copy(); s["stk"] = str(i); stacks.append(s)
+S = pd.concat(stacks, ignore_index=True); del stacks
+S["bt"] = S.stk + "#" + S.unit + "#" + S.tract; S["tm"] = S.stk + "#" + S.tract + "#" + S.m.astype(str)
+P(f"  stacks {S.stk.nunique()}, comparison units {len(ctrl_units)}, rows {len(S):,}")
+rep("H1 clean comparison: Access", est("y ~ Access + SalePrice + Models | bt + tm", S), "Access")
+rep("H1b clean comparison: Access x HomeCharge", est(f"y ~ Access + Access:HomeCharge_z + {CTRL} + SalePrice + Models | bt + tm", S), "Access:HomeCharge_z")
+del S
+
 # ---------------------------------------------------------------- verdicts
 P("# Verdicts")
 def V(k, sign):
@@ -203,7 +241,9 @@ rows = [("H1", *V("H1 rivals: Access", 1)),
         ("H1a", *V("H1a rivals: Access x CommAlt (pred -)", -1)), ("H1a stricter", *V("H1a stricter", -1)),
         ("H1b", *V("H1b rivals: Access x HomeCharge (pred +)", 1)), ("H1b stricter", *V("H1b stricter", 1)),
         ("H2a", *V("H2a owner share: N x CommAlt (pred +)", 1)), ("H2b", *V("H2b owner share: N x HomeCharge (pred -)", -1)),
-        ("H3a", *V("H3a total: N x CommAlt (pred -)", -1)), ("H3b", *V("H3b total: N x HomeCharge (pred -)", -1))]
+        ("H3a", *V("H3a total: N x CommAlt (pred -)", -1)), ("H3b", *V("H3b total: N x HomeCharge (pred -)", -1)),
+        ("H1, clean comparison", *V("H1 clean comparison: Access", 1)), ("H1b, clean comparison", *V("H1b clean comparison: Access x HomeCharge", 1)),
+        ("H2 (described only)", *V("H2 described: N, Tesla share, linear trend removed", -1)), ("H3 (described only)", *V("H3 described: N, total registrations, linear trend removed", 1))]
 Vt = pd.DataFrame(rows, columns=["H", "estimate", "supported"]); P(Vt.to_string(index=False)); Vt.to_csv(f"{O}/verdicts.csv", index=False)
 pd.DataFrame([dict(test=k, b=b, se=s_, p=p, pct=pc(b)) for k, (b, s_, p) in RES.items()]).to_csv(f"{O}/results.csv", index=False)
 open(f"{O}/log.txt", "w").write("\n".join(out)); P(f"DONE {(time.time()-t0)/60:.1f} min")

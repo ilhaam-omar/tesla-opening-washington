@@ -41,14 +41,35 @@
   H2b event study (Tesla share x HomeCharge_z): pre-2024 mean -0.004, from 2024Q4 mean -0.094
   H3a event study (Total x CommAlt_z): pre-2024 mean +0.008, from 2024Q4 mean -0.009
   H3b event study (Total x HomeCharge_z): pre-2024 mean +0.016, from 2024Q4 mean -0.008
+# H2 and H3 main effects: observed change (descriptive)
+                    Tesla  Total  months  Tesla share  Total per month
+period                                                                
+2022              16407.0  27528      12        0.596         2294.000
+2023 to Feb 2024  26924.0  50322      14        0.535         3594.429
+Mar to Dec 2024   20652.0  42882      10        0.482         4288.200
+Jan to Jun 2025    8174.0  20349       6        0.402         3391.500
+  H2 observed: Tesla's share 0.557 before March 2024, 0.456 after (-0.101)
+  H3 observed: total registrations per month 2,994 before, 3,952 after
+  H2 described: N, Tesla share, linear trend removed -0.0091 (0.0039) p=0.021  -0.9%
+  H3 described: N, total registrations, linear trend removed -0.0751 (0.0024) p=0.000  -7.2%
+  H2 described: N, Tesla share, linear trend removed: -7.9% with nine rivals
+  H3 described: N, total registrations, linear trend removed: -49.1% with nine rivals
+# H1 and H1b, comparison with brands without access only (stacked)
+  stacks 8, comparison units 7, rows 4,660,110
+  H1 clean comparison: Access                      -0.0788 (0.0349) p=0.024  -7.6%
+  H1b clean comparison: Access x HomeCharge        +0.0528 (0.0149) p=0.000  +5.4%
 # Verdicts
-           H        estimate supported
-          H1 -1.9% (p=0.428)        No
-         H1a -0.6% (p=0.877)        No
-H1a stricter -4.6% (p=0.140)        No
-         H1b +5.8% (p=0.000)       Yes
-H1b stricter +6.1% (p=0.059)      Weak
-         H2a -0.1% (p=0.835)        No
-         H2b -1.3% (p=0.000)       Yes
-         H3a -1.3% (p=0.007)       Yes
-         H3b -0.3% (p=0.474)        No
+                    H        estimate supported
+                   H1 -1.9% (p=0.428)        No
+                  H1a -0.6% (p=0.877)        No
+         H1a stricter -4.6% (p=0.140)        No
+                  H1b +5.8% (p=0.000)       Yes
+         H1b stricter +6.1% (p=0.059)      Weak
+                  H2a -0.1% (p=0.835)        No
+                  H2b -1.3% (p=0.000)       Yes
+                  H3a -1.3% (p=0.007)       Yes
+                  H3b -0.3% (p=0.474)        No
+ H1, clean comparison -7.6% (p=0.024)        No
+H1b, clean comparison +5.4% (p=0.000)       Yes
+  H2 (described only) -0.9% (p=0.021)       Yes
+  H3 (described only) -7.2% (p=0.000)        No
