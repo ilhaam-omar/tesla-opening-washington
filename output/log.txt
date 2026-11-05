@@ -58,6 +58,50 @@ Jan to Jun 2025    8174.0  20349       6        0.402         3391.500
   stacks 8, comparison units 7, rows 4,660,110
   H1 clean comparison: Access                      -0.0788 (0.0349) p=0.024  -7.6%
   H1b clean comparison: Access x HomeCharge        +0.0528 (0.0149) p=0.000  +5.4%
+# Full estimates of the models in Tables 1 and 2
+                              model                term       b     se      p      pct      N
+               Table 1 (1) Baseline              Access -0.0188 0.0237 0.4279  -1.8611 384213
+               Table 1 (1) Baseline           SalePrice -0.1732 0.0911 0.0572 -15.9060 384213
+               Table 1 (1) Baseline              Models  0.0164 0.0079 0.0393   1.6490 384213
+           Table 1 (2) Alternatives              Access -0.0185 0.1265 0.8839  -1.8305 384213
+           Table 1 (2) Alternatives           SalePrice -0.1763 0.0906 0.0515 -16.1669 384213
+           Table 1 (2) Alternatives              Models  0.0167 0.0078 0.0335   1.6799 384213
+           Table 1 (2) Alternatives    Access:CommAlt_z -0.0059 0.0385 0.8775  -0.5922 384213
+           Table 1 (2) Alternatives  Access:TeslaStalls -0.0013 0.0345 0.9688  -0.1348 384213
+           Table 1 (2) Alternatives     Access:Income_z  0.0079 0.0072 0.2768   0.7912 384213
+           Table 1 (2) Alternatives    Access:Density_z  0.0310 0.0124 0.0125   3.1449 384213
+           Table 1 (2) Alternatives  Access:VoteShare_z  0.0009 0.0322 0.9780   0.0887 384213
+ Table 1 (3) Alternatives, stricter    Access:CommAlt_z -0.0467 0.0317 0.1403  -4.5604 620480
+ Table 1 (3) Alternatives, stricter  Access:TeslaStalls -0.0573 0.0295 0.0525  -5.5673 620480
+ Table 1 (3) Alternatives, stricter     Access:Income_z  0.0765 0.0141 0.0000   7.9477 620480
+ Table 1 (3) Alternatives, stricter    Access:Density_z  0.0553 0.0163 0.0007   5.6843 620480
+ Table 1 (3) Alternatives, stricter  Access:VoteShare_z -0.0860 0.0250 0.0006  -8.2385 620480
+          Table 1 (4) Home charging              Access -0.0240 0.0318 0.4506  -2.3733 384213
+          Table 1 (4) Home charging           SalePrice -0.1775 0.0906 0.0501 -16.2673 384213
+          Table 1 (4) Home charging              Models  0.0167 0.0079 0.0339   1.6809 384213
+          Table 1 (4) Home charging Access:HomeCharge_z  0.0560 0.0109 0.0000   5.7637 384213
+          Table 1 (4) Home charging     Access:Income_z -0.0201 0.0116 0.0818  -1.9943 384213
+          Table 1 (4) Home charging    Access:Density_z  0.0563 0.0087 0.0000   5.7863 384213
+          Table 1 (4) Home charging  Access:VoteShare_z  0.0167 0.0242 0.4908   1.6830 384213
+Table 1 (5) Home charging, stricter Access:HomeCharge_z  0.0594 0.0314 0.0587   6.1244 620480
+Table 1 (5) Home charging, stricter     Access:Income_z  0.0378 0.0223 0.0891   3.8553 620480
+Table 1 (5) Home charging, stricter    Access:Density_z  0.0721 0.0146 0.0000   7.4729 620480
+Table 1 (5) Home charging, stricter  Access:VoteShare_z -0.1017 0.0283 0.0003  -9.6668 620480
+   Table 2 (1) Tesla's market share         N:CommAlt_z -0.0009 0.0045 0.8351  -0.0936  44700
+   Table 2 (1) Tesla's market share       N:TeslaStalls -0.0029 0.0046 0.5351  -0.2857  44700
+   Table 2 (1) Tesla's market share      N:HomeCharge_z -0.0128 0.0021 0.0000  -1.2686  44700
+   Table 2 (1) Tesla's market share          N:Income_z  0.0002 0.0005 0.6668   0.0196  44700
+   Table 2 (1) Tesla's market share         N:Density_z -0.0106 0.0023 0.0000  -1.0586  44700
+    Table 2 (2) Total registrations         N:CommAlt_z -0.0130 0.0048 0.0067  -1.2964  71263
+    Table 2 (2) Total registrations       N:TeslaStalls -0.0167 0.0041 0.0001  -1.6526  71263
+    Table 2 (2) Total registrations      N:HomeCharge_z -0.0027 0.0038 0.4739  -0.2731  71263
+    Table 2 (2) Total registrations          N:Income_z -0.0033 0.0020 0.0990  -0.3245  71263
+    Table 2 (2) Total registrations         N:Density_z  0.0018 0.0015 0.2427   0.1803  71263
+Table 2 (3) Non-Tesla registrations         N:CommAlt_z -0.0122 0.0058 0.0357  -1.2127  70321
+Table 2 (3) Non-Tesla registrations       N:TeslaStalls -0.0171 0.0047 0.0002  -1.6914  70321
+Table 2 (3) Non-Tesla registrations      N:HomeCharge_z  0.0053 0.0047 0.2647   0.5281  70321
+Table 2 (3) Non-Tesla registrations          N:Income_z  0.0048 0.0025 0.0583   0.4830  70321
+Table 2 (3) Non-Tesla registrations         N:Density_z  0.0106 0.0020 0.0000   1.0614  70321
 # Verdicts
                     H        estimate supported
                    H1 -1.9% (p=0.428)        No

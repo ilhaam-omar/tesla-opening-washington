@@ -232,6 +232,28 @@ rep("H1 clean comparison: Access", est("y ~ Access + SalePrice + Models | bt + t
 rep("H1b clean comparison: Access x HomeCharge", est(f"y ~ Access + Access:HomeCharge_z + {CTRL} + SalePrice + Models | bt + tm", S), "Access:HomeCharge_z")
 del S
 
+# ---------------------------------------------------------------- full estimates (Appendix Tables C and D)
+# Every coefficient of the eight models in Tables 1 and 2, including the controls.
+P("# Full estimates of the models in Tables 1 and 2")
+FULL = {
+    "Table 1 (1) Baseline": est("y ~ Access + SalePrice + Models | bt + tm", R),
+    "Table 1 (2) Alternatives": est(f"y ~ Access + Access:CommAlt_z + Access:TeslaStalls + {CTRL} + SalePrice + Models | bt + tm", R),
+    "Table 1 (3) Alternatives, stricter": est(f"y ~ Access:CommAlt_z + Access:TeslaStalls + {CTRL} | bt + cm + bm", R),
+    "Table 1 (4) Home charging": est(f"y ~ Access + Access:HomeCharge_z + {CTRL} + SalePrice + Models | bt + tm", R),
+    "Table 1 (5) Home charging, stricter": est(f"y ~ Access:HomeCharge_z + {CTRL} | bt + cm + bm", R),
+    "Table 2 (1) Tesla's market share": est_share(f"Tesla ~ {X2} | tract + cm", Wn),
+    "Table 2 (2) Total registrations": est(f"Total ~ {X2} | tract + cm", Wn),
+    "Table 2 (3) Non-Tesla registrations": est(f"NonTesla ~ {X2} | tract + cm", Wn),
+}
+rows = []
+for name, m in FULL.items():
+    tt = m.tidy()
+    for term, r in tt.iterrows():
+        rows.append(dict(model=name, term=term, b=r["Estimate"], se=r["Std. Error"], p=r["Pr(>|t|)"], pct=pc(r["Estimate"]), N=getattr(m, "_N", None)))
+full = pd.DataFrame(rows); full.to_csv(f"{O}/full_estimates.csv", index=False)
+P(full.round(4).to_string(index=False))
+del FULL
+
 # ---------------------------------------------------------------- verdicts
 P("# Verdicts")
 def V(k, sign):
